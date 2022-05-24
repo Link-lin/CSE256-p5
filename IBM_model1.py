@@ -1,7 +1,6 @@
 from io import TextIOWrapper
 import pickle
-
-
+import sys
 
 def word_count(file:TextIOWrapper):
     counts = dict()
@@ -24,11 +23,10 @@ def calculate_denom(t:dict, word_count:dict, en_words:list[str], es_words:list[s
         res += t.get((en_words[j], es_word), default) 
     return res;
 
-def EM(en:TextIOWrapper, es:TextIOWrapper, word_count:dict):
+def EM(en:TextIOWrapper, es:TextIOWrapper, word_count:dict, iter_count:int):
     t = {}
-    for i in range(5):
-        print("itr:" + str(i))
-        c2, c1 = {}, {}
+    for i in range(iter_count):
+        c_ef, c_e = {}, {}
         for l_en, l_es in zip(en, es):
             # add NULL to the english line  
             en_words = l_en.strip().split()
@@ -44,12 +42,12 @@ def EM(en:TextIOWrapper, es:TextIOWrapper, word_count:dict):
                     # claculate delta
                     delta = float(delta_numrt)/delta_denom
                     # update c and c double
-                    c2[(en_word, es_word)] =  c2.get((en_word, es_word), 0.0) + delta
-                    c1[en_word] = c1.get(en_word, 0.0) + delta
+                    c_ef[(en_word, es_word)] =  c_ef.get((en_word, es_word), 0.0) + delta
+                    c_e[en_word] = c_e.get(en_word, 0.0) + delta
     
         # update t according 
-        for (en_v,es_v), c_e_s in c2.items():
-            t[(en_v,es_v)] = float(c_e_s)/ c1[en_v]
+        for (en_v,es_v), c_e_s in c_ef.items():
+            t[(en_v,es_v)] = float(c_e_s)/ c_e[en_v]
 
         en.seek(0)
         es.seek(0)
@@ -61,36 +59,50 @@ def output_alignment(t):
 
     output_file = open("./ibm_model1.out", "w")
 
-    l_number = 1
+    sentence_index = 1
     for l_en, l_es in zip(en_dev, es_dev):
         en_words = l_en.strip().split()
         en_words = ["_NULL_"] + en_words
         es_words = l_es.strip().split()
-        line = find_best_match(en_words, es_words, t)
-        c = 1
-        for j in line:
-            output_file.write("%d %d %d\n" % (l_number, j, c))
-            c += 1
-        l_number += 1 
+        line = arg_max(en_words, es_words, t)
+        f_index = 1
+        for en_index in line:
+            output_file.write("%d %d %d\n" % (sentence_index, en_index, f_index))
+            f_index += 1
+        sentence_index += 1 
     
 
-def find_best_match(en_words, es_words, t):
+def arg_max(en_words, es_words, t):
     res = []
     for i in range(len(es_words)):
-        max_j = 0
+        max_en_index = 0
         max_s = 0
         for j in range(len(en_words)):
            s = t.get((en_words[j], es_words[i]), 0)
            if(s > max_s):
-               max_j = j
+               max_en_index = j
                max_s = s
-        res.append(max_j)
+        res.append(max_en_index)
     return res 
 
-
-
+def usage():
+    sys.stderr.write("""
+     python IBM_model1.py [iteration count]
+        Read in the amount of iteration for EM algorithm and output the ordering.
+     """)
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        usage()
+        sys.exit(1)
+    
+    iter_count = 0;
+    try:
+      iter_count = int(sys.argv[1])
+    except:
+        sys.stderr.write("ERROR: cannot parse the iteration number into int.")
+        sys.exit(1)
+
     # load english file to count word
     en_corpus = open("./corpus.en")
     es_corpus = open("./corpus.es")
@@ -99,7 +111,7 @@ if __name__ == "__main__":
     # print(word_count)
 
     en_corpus.seek(0)
-    t = EM(en_corpus, es_corpus, word_count)
+    t = EM(en_corpus, es_corpus, word_count, iter_count)
     #print(t)
     # store t
     pickle.dump(t, open("./ibm_model1", "wb"))
